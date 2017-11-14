@@ -1,0 +1,161 @@
+<html>
+<head>
+<meta charset="utf-8"/>
+<title>JRW</title>
+<script src="https://code.jquery.com/jquery-2.2.4.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.2.0/leaflet.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.2.0/leaflet.js"></script>
+<script>
+//. 初期位置（京都駅）
+var lat = 34.981944;
+var lng = 135.761389;
+
+var map = null;
+var markers = [];
+var firsttime = true;
+var timer = -1;
+var icons = [];
+var iconcolors = ["black","blue","green","grey","orange","red","violet","yellow"];
+
+$(function(){
+  //. 地図を OpenStreetMap データで表示
+  map = L.map('demoMap').setView( [ lat, lng ], 13 );
+  L.tileLayer(
+    'http://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: 'Map data &copy; <a href="http://openstreetmap.org/">OpenStreetMap</a>',
+      maxZoom: 18
+    }
+  ).addTo( map );
+
+  //. 必要なアイコンを用意しておく
+  for( var i = 0; i < iconcolors.length; i ++ ){
+    var icon = new L.Icon({
+      iconUrl: 'https://cdn.rawgit.com/pointhi/leaflet-color-markers/master/img/marker-icon-' + iconcolors[i] + '.png',
+      shadowUrl: 'https://cdn.rawgit.com/pointhi/leaflet-color-markers/master/img/marker-shadow.png',
+      iconSize: [ 25, 41 ],
+      iconAnchor: [ 12, 41 ],
+      popupAnchor: [ 1, -34 ],
+      shadowSize: [ 41, 41 ]
+    });
+    icons.push( icon );
+  }
+  
+  $('input[type="checkbox"]').change( reDrawTrains );
+});
+
+  function reDrawTrains(){
+    if( markers && markers.length > 0 ){
+      for( var i = 0; i < markers.length; i ++ ){
+        map.removeLayer( markers[i] );
+      }
+      markers = [];
+    }
+
+    $('input[type="checkbox"]').each( function(){
+      var prop = $(this).prop( 'checked' );
+      if( prop ){
+        var checked_id = $(this).attr( 'id' );
+        $.ajax({
+          type: 'GET',
+          url: '/status?line_id=' + checked_id,
+          success: function( data ){
+            var json = JSON.parse( JSON.parse( data ) );
+            var update = json.update;
+            if( json.trains && json.trains.length > 0 ){
+              var cnt = 0;
+              for( var i = 0; i < json.trains.length; i ++ ){
+                var train = json.trains[i];
+                var train_no = train.no;
+                var train_pos = train.pos; //. XXXX_YYYY or XXXX_0000
+                var train_direction = train.direction; //. 0:上（外）, 1:下（内）
+                var train_type = train.type;
+                var train_displayType = train.displayType;
+                var train_dest_text = train.dest.text;
+                var train_dest_code = train.dest.code;
+                var train_dest_line = train.dest.line;
+                var train_via = train.via;
+                var train_delayMinutes = train.delayMinutes;
+                var train_typeChange = train.typeChange;
+                var train_numberOfCars = train.numberOfCars;
+
+                var message = '[' + train_no + ']' + train_dest_text + '行';
+                if( train_delayMinutes != 0 ){
+                  message += '(' + train_delayMinutes + '分遅れ)';
+                }
+                $.ajax({
+                  type: 'GET',
+                  url: '/getStation?line=' + checked_id + '&codes=' + train_pos + '&message=' + message,
+                  success: function( data0 ){
+                    var result = JSON.parse( data0 );
+                    if( result.status ){
+                      var popup = result.message;
+                      var lat = null, lng = null;
+                      var stations = result.stations;
+                      if( stations.length == 1 ){
+                        lat = stations[0].lat;
+                        lng = stations[0].lng;
+                      }else{
+                        lat = ( stations[0].lat + stations[1].lat ) / 2;
+                        lng = ( stations[0].lng + stations[1].lng ) / 2;
+                      }
+                      if( lat != null && lng != null ){
+                        var id = parseInt(((popup.split(']'))[0].split('['))[1].substring(0,4));
+                        var marker = L.marker( [ lat, lng ], { icon: icons[id % iconcolors.length] } ).addTo( map );
+                        marker.bindPopup( popup ).openPopup();
+                        markers.push( marker );
+                      }
+                    }
+                    cnt ++;
+                    if( firsttime && cnt == json.trains.length ){
+                      var group = new L.featureGroup( markers );
+                      map.fitBounds( group.getBounds() );
+                      firsttime = false;
+                    }
+                  },
+                  error: function(){
+                    cnt ++;
+                    if( firsttime && cnt == json.trains.length ){
+                      var group = new L.featureGroup( markers );
+                      map.fitBounds( group.getBounds() );
+                      firsttime = false;
+                    }
+                  }
+                });
+              }
+            }
+          },
+          error: function(){
+          }
+        });
+      }
+    });
+
+    if( timer != -1 ){
+      clearTimeout( timer );
+    }
+    timer = setTimeout( 'reDrawTrains()', 10000 );
+  }
+</script>
+<style>
+html, body  {
+	width: 100%;
+	height: 100%;
+	padding: 0px;
+	margin: 0px;
+}
+#demoMap {
+	width: 100%;
+	height: 100%;
+}
+</style>
+</head>
+<body>
+<div>
+<input type="checkbox" id="hokurikubiwako" value="hokurikuviwako"/>北陸線・琵琶湖線
+<input type="checkbox" id="kyoto" value="kyoto"/>JR京都線
+
+</div>
+<div id="demoMap"></div>
+</body>
+</html>
+
